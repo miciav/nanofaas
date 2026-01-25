@@ -27,11 +27,14 @@ public class FunctionService {
     }
 
     public Optional<FunctionSpec> register(FunctionSpec spec) {
-        if (registry.get(spec.name()).isPresent()) {
+        FunctionSpec resolved = resolver.resolve(spec);
+        // Atomic check-and-put: returns null if successful, or existing value if already present
+        FunctionSpec existing = registry.putIfAbsent(resolved);
+        if (existing != null) {
+            // Function already exists
             return Optional.empty();
         }
-        FunctionSpec resolved = resolver.resolve(spec);
-        registry.put(resolved);
+        // Registration succeeded - create the queue
         queueManager.getOrCreate(resolved);
         return Optional.of(resolved);
     }

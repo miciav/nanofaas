@@ -2,22 +2,30 @@ package com.mcfaas.controlplane.core;
 
 import com.mcfaas.common.model.ExecutionMode;
 import com.mcfaas.common.model.InvocationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 public class Scheduler implements SmartLifecycle {
+    private static final Logger log = LoggerFactory.getLogger(Scheduler.class);
+
     private final QueueManager queueManager;
     private final DispatcherRouter dispatcherRouter;
     private final ExecutionStore executionStore;
     private final InvocationService invocationService;
     private final Metrics metrics;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "mcfaas-scheduler");
+        t.setDaemon(false);
+        return t;
+    });
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile long tickMs = 2;
 
@@ -36,14 +44,27 @@ public class Scheduler implements SmartLifecycle {
     @Override
     public void start() {
         if (running.compareAndSet(false, true)) {
+            log.info("Scheduler starting");
             executor.submit(this::loop);
         }
     }
 
     @Override
     public void stop() {
+        log.info("Scheduler stopping...");
         running.set(false);
-        executor.shutdownNow();
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                log.warn("Scheduler did not terminate in time, forcing shutdown");
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException ex) {
+            log.warn("Scheduler shutdown interrupted");
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        log.info("Scheduler stopped");
     }
 
     @Override
@@ -62,14 +83,22 @@ public class Scheduler implements SmartLifecycle {
     }
 
     private void loop() {
+        log.debug("Scheduler loop started");
         while (running.get()) {
             boolean didWork = false;
             for (FunctionQueueState state : queueManager.states()) {
-                if (!state.canDispatch()) {
+                if (!running.get()) {
+                    break;  // Exit early if stopping
+                }
+                // Atomically acquire a dispatch slot
+                if (!state.tryAcquireSlot()) {
                     continue;
                 }
+                // Slot acquired - try to get a task
                 InvocationTask task = state.poll();
                 if (task == null) {
+                    // No task in queue - release the slot
+                    state.releaseSlot();
                     continue;
                 }
                 didWork = true;
@@ -79,16 +108,18 @@ public class Scheduler implements SmartLifecycle {
                 sleep(tickMs);
             }
         }
+        log.debug("Scheduler loop exited");
     }
 
     private void dispatch(FunctionQueueState state, InvocationTask task) {
         ExecutionRecord record = executionStore.get(task.executionId()).orElse(null);
         if (record == null) {
+            state.releaseSlot();  // Release slot if record not found
             return;
         }
-        state.incrementInFlight();
-        record.state(ExecutionState.RUNNING);
-        record.startedAt(Instant.now());
+        // Slot already acquired in loop() via tryAcquireSlot()
+        // Mark running atomically (sets state and startedAt together)
+        record.markRunning();
         metrics.dispatch(task.functionName());
 
         if (task.functionSpec().executionMode() == ExecutionMode.LOCAL) {
@@ -115,10 +146,19 @@ public class Scheduler implements SmartLifecycle {
             return;
         }
 
+        // REMOTE dispatch: Job is created asynchronously in K8s.
+        // Completion will happen via callback when the function pod finishes.
+        // We only handle errors here - success is a no-op because the callback
+        // from the function pod will call completeExecution().
         dispatcherRouter.dispatchRemote(task).whenComplete((result, error) -> {
             if (error != null) {
+                log.error("Failed to dispatch REMOTE task {} for function {}: {}",
+                        task.executionId(), task.functionName(), error.getMessage());
                 invocationService.completeExecution(task.executionId(),
                         InvocationResult.error("DISPATCH_ERROR", error.getMessage()));
+            } else {
+                log.debug("K8s Job created for execution {}, function {}. Waiting for callback.",
+                        task.executionId(), task.functionName());
             }
         });
     }

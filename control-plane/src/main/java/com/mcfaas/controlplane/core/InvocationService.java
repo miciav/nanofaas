@@ -62,7 +62,7 @@ public class InvocationService {
             InvocationResult result = record.completion().get(timeoutMs, TimeUnit.MILLISECONDS);
             return toResponse(record, result);
         } catch (Exception ex) {
-            record.state(ExecutionState.TIMEOUT);
+            record.markTimeout();
             metrics.timeout(functionName);
             return new InvocationResponse(record.executionId(), "timeout", null, null);
         }
@@ -94,40 +94,48 @@ public class InvocationService {
             return;
         }
 
-        record.finishedAt(Instant.now());
-        if (result.success()) {
-            record.state(ExecutionState.SUCCESS);
-            record.output(result.output());
-            metrics.success(record.task().functionName());
-        } else {
-            record.state(ExecutionState.ERROR);
-            record.lastError(result.error());
-            metrics.error(record.task().functionName());
-        }
-        if (record.startedAt() != null && record.finishedAt() != null) {
-            long durationMs = record.finishedAt().toEpochMilli() - record.startedAt().toEpochMilli();
-            metrics.latency(record.task().functionName()).record(durationMs, java.util.concurrent.TimeUnit.MILLISECONDS);
-        }
-
-        record.completion().complete(result);
         queueManager.decrementInFlight(record.task().functionName());
 
-        if (!result.success() && record.task().attempt() < record.task().functionSpec().maxRetries()) {
+        // Check if retry is needed BEFORE completing the future
+        boolean shouldRetry = !result.success()
+                && record.task().attempt() < record.task().functionSpec().maxRetries();
+
+        if (shouldRetry) {
+            // Schedule retry - don't complete the future yet
             metrics.retry(record.task().functionName());
             InvocationTask retryTask = new InvocationTask(
                     record.executionId(),
                     record.task().functionName(),
                     record.task().functionSpec(),
                     record.task().request(),
-                    record.task().idempotencyKey(),
+                    null,  // No idempotency key for retry - retry is internal
                     record.task().traceId(),
                     Instant.now(),
                     record.task().attempt() + 1
             );
-            ExecutionRecord retryRecord = new ExecutionRecord(record.executionId(), retryTask);
-            executionStore.put(retryRecord);
-            enqueueOrThrow(retryRecord);
+            // Reset record atomically for retry, preserving CompletableFuture
+            record.resetForRetry(retryTask);
+            enqueueOrThrow(record);
+            return;
         }
+
+        // No retry - complete the execution atomically
+        ExecutionRecord.Snapshot beforeComplete = record.snapshot();
+        if (result.success()) {
+            record.markSuccess(result.output());
+            metrics.success(record.task().functionName());
+        } else {
+            record.markError(result.error());
+            metrics.error(record.task().functionName());
+        }
+
+        ExecutionRecord.Snapshot afterComplete = record.snapshot();
+        if (beforeComplete.startedAt() != null && afterComplete.finishedAt() != null) {
+            long durationMs = afterComplete.finishedAt().toEpochMilli() - beforeComplete.startedAt().toEpochMilli();
+            metrics.latency(record.task().functionName()).record(durationMs, TimeUnit.MILLISECONDS);
+        }
+
+        record.completion().complete(result);
     }
 
     private void enforceRateLimit() {
@@ -185,14 +193,16 @@ public class InvocationService {
     }
 
     private ExecutionStatus toStatus(ExecutionRecord record) {
-        String status = record.state().name().toLowerCase();
+        // Use snapshot for consistent read of all fields
+        ExecutionRecord.Snapshot snapshot = record.snapshot();
+        String status = snapshot.state().name().toLowerCase();
         return new ExecutionStatus(
-                record.executionId(),
+                snapshot.executionId(),
                 status,
-                record.startedAt(),
-                record.finishedAt(),
-                record.output(),
-                record.lastError()
+                snapshot.startedAt(),
+                snapshot.finishedAt(),
+                snapshot.output(),
+                snapshot.lastError()
         );
     }
 

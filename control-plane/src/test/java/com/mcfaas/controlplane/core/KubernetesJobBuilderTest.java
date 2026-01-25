@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class KubernetesJobBuilderTest {
     @Test
     void issue012_jobTemplateIncludesImageAndEnv() {
-        KubernetesProperties properties = new KubernetesProperties("mcfaas", "http://control-plane/v1/internal/executions");
+        KubernetesProperties properties = new KubernetesProperties("mcfaas", "http://control-plane/v1/internal/executions", 10);
         KubernetesJobBuilder builder = new KubernetesJobBuilder(properties);
 
         FunctionSpec spec = new FunctionSpec(

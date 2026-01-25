@@ -11,8 +11,8 @@ import java.util.concurrent.CompletableFuture;
 public class PoolDispatcher implements Dispatcher {
     private final WebClient webClient;
 
-    public PoolDispatcher(WebClient.Builder builder) {
-        this.webClient = builder.build();
+    public PoolDispatcher(WebClient webClient) {
+        this.webClient = webClient;
     }
 
     @Override

@@ -4,26 +4,26 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 @ConfigurationProperties(prefix = "mcfaas.rate")
 public class RateLimiter {
     private int maxPerSecond = 1000;
-    private volatile long windowStartSecond = Instant.now().getEpochSecond();
-    private final AtomicInteger windowCount = new AtomicInteger();
+    private long windowStartSecond = Instant.now().getEpochSecond();
+    private int windowCount = 0;
 
-    public boolean allow() {
+    /**
+     * Thread-safe rate limiting using a sliding window per second.
+     * All operations are synchronized to prevent race conditions.
+     */
+    public synchronized boolean allow() {
         long now = Instant.now().getEpochSecond();
         if (now != windowStartSecond) {
-            synchronized (this) {
-                if (now != windowStartSecond) {
-                    windowStartSecond = now;
-                    windowCount.set(0);
-                }
-            }
+            windowStartSecond = now;
+            windowCount = 0;
         }
-        return windowCount.incrementAndGet() <= maxPerSecond;
+        windowCount++;
+        return windowCount <= maxPerSecond;
     }
 
     public int getMaxPerSecond() {

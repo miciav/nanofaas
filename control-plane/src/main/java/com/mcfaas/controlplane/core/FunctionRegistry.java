@@ -24,6 +24,16 @@ public class FunctionRegistry {
         return functions.put(spec.name(), spec);
     }
 
+    /**
+     * Atomically puts the spec if no mapping exists for the given name.
+     *
+     * @param spec the function spec to put
+     * @return the previous value if one existed, or null if the put succeeded
+     */
+    public FunctionSpec putIfAbsent(FunctionSpec spec) {
+        return functions.putIfAbsent(spec.name(), spec);
+    }
+
     public FunctionSpec remove(String name) {
         return functions.remove(name);
     }

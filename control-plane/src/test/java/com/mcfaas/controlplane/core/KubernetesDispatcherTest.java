@@ -32,7 +32,7 @@ class KubernetesDispatcherTest {
     @Test
     void issue011_dispatchCreatesJob() {
         KubernetesClient client = server.getClient();
-        KubernetesProperties properties = new KubernetesProperties("default", "http://control-plane/v1/internal/executions");
+        KubernetesProperties properties = new KubernetesProperties("default", "http://control-plane/v1/internal/executions", 10);
         KubernetesDispatcher dispatcher = new KubernetesDispatcher(client, properties);
 
         FunctionSpec spec = new FunctionSpec(

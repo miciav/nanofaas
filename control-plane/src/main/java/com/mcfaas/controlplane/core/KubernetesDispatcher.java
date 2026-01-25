@@ -3,12 +3,19 @@ package com.mcfaas.controlplane.core;
 import com.mcfaas.common.model.InvocationResult;
 import io.fabric8.kubernetes.api.model.batch.v1.Job;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class KubernetesDispatcher implements Dispatcher {
+    private static final Logger log = LoggerFactory.getLogger(KubernetesDispatcher.class);
+
     private final KubernetesClient client;
     private final KubernetesProperties properties;
 
@@ -19,15 +26,47 @@ public class KubernetesDispatcher implements Dispatcher {
 
     @Override
     public CompletableFuture<InvocationResult> dispatch(InvocationTask task) {
+        int timeoutSeconds = properties.apiTimeoutSecondsOrDefault();
+
         return CompletableFuture.supplyAsync(() -> {
-            KubernetesJobBuilder builder = new KubernetesJobBuilder(properties);
-            Job job = builder.build(task);
-            client.batch().v1().jobs()
-                    .inNamespace(namespace())
-                    .resource(job)
-                    .create();
-            return InvocationResult.success(null);
-        });
+            try {
+                KubernetesJobBuilder builder = new KubernetesJobBuilder(properties);
+                Job job = builder.build(task);
+
+                Job created = client.batch().v1().jobs()
+                        .inNamespace(namespace())
+                        .resource(job)
+                        .create();
+
+                log.debug("Created K8s Job {} for execution {}",
+                        created.getMetadata().getName(), task.executionId());
+
+                return InvocationResult.success(null);
+
+            } catch (KubernetesClientException ex) {
+                log.error("K8s API error creating job for execution {}: {}",
+                        task.executionId(), ex.getMessage());
+                throw ex;
+            }
+        }).orTimeout(timeoutSeconds, TimeUnit.SECONDS)
+          .exceptionally(ex -> {
+              Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+
+              if (cause instanceof TimeoutException) {
+                  log.error("K8s API timeout ({} seconds) creating job for execution {}",
+                          timeoutSeconds, task.executionId());
+                  return InvocationResult.error("K8S_TIMEOUT",
+                          "Kubernetes API timeout after " + timeoutSeconds + " seconds");
+              }
+
+              if (cause instanceof KubernetesClientException kce) {
+                  return InvocationResult.error("K8S_ERROR", kce.getMessage());
+              }
+
+              log.error("Unexpected error creating K8s job for execution {}: {}",
+                      task.executionId(), cause.getMessage());
+              return InvocationResult.error("DISPATCH_ERROR", cause.getMessage());
+          });
     }
 
     private String namespace() {

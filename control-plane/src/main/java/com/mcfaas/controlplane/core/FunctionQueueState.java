@@ -40,14 +40,53 @@ public class FunctionQueueState {
         return inFlight.get();
     }
 
+    /**
+     * Atomically checks if dispatch is allowed and increments inFlight if so.
+     * This prevents race conditions where multiple threads could both pass
+     * canDispatch() check and then both increment, exceeding the concurrency limit.
+     *
+     * @return true if a dispatch slot was acquired, false if limit reached
+     */
+    public boolean tryAcquireSlot() {
+        while (true) {
+            int current = inFlight.get();
+            if (current >= concurrency) {
+                return false;
+            }
+            if (inFlight.compareAndSet(current, current + 1)) {
+                return true;
+            }
+            // CAS failed, another thread modified - retry
+        }
+    }
+
+    /**
+     * Releases a dispatch slot. Must be called after dispatch completes.
+     */
+    public void releaseSlot() {
+        inFlight.decrementAndGet();
+    }
+
+    /**
+     * @deprecated Use {@link #tryAcquireSlot()} for thread-safe dispatch slot acquisition
+     */
+    @Deprecated
     public boolean canDispatch() {
         return inFlight.get() < concurrency;
     }
 
+    /**
+     * @deprecated Use {@link #tryAcquireSlot()} for thread-safe dispatch slot acquisition
+     */
+    @Deprecated
     public void incrementInFlight() {
         inFlight.incrementAndGet();
     }
 
+    /**
+     * @deprecated Use {@link #releaseSlot()} instead
+     */
+    @Deprecated
     public void decrementInFlight() {
         inFlight.decrementAndGet();
     }

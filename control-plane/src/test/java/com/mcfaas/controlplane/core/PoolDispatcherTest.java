@@ -52,7 +52,7 @@ class PoolDispatcherTest {
                 1
         );
 
-        PoolDispatcher dispatcher = new PoolDispatcher(WebClient.builder());
+        PoolDispatcher dispatcher = new PoolDispatcher(WebClient.builder().build());
         InvocationResult result = dispatcher.dispatch(task).get();
 
         assertTrue(result.success());
@@ -96,7 +96,7 @@ class PoolDispatcherTest {
                 1
         );
 
-        PoolDispatcher dispatcher = new PoolDispatcher(WebClient.builder());
+        PoolDispatcher dispatcher = new PoolDispatcher(WebClient.builder().build());
         InvocationResult result = dispatcher.dispatch(task).get();
 
         assertTrue(result.success());
