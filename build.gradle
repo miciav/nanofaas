@@ -1,0 +1,22 @@
+plugins {
+    id 'java'
+}
+
+allprojects {
+    group = 'com.mcfaas'
+    version = '0.1.0'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(Integer.parseInt(project.findProperty('javaVersion') ?: '17'))
+        }
+    }
+}

@@ -1,0 +1,340 @@
+openapi: 3.0.3
+info:
+  title: mcFaas Control Plane API
+  version: 0.1.0
+  description: |
+    Minimal FaaS control plane API for function registration and invocation.
+servers:
+  - url: /
+
+paths:
+  /v1/functions:
+    get:
+      summary: List functions
+      operationId: listFunctions
+      responses:
+        '200':
+          description: Function list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FunctionSummary'
+    post:
+      summary: Register a function
+      operationId: registerFunction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FunctionSpec'
+      responses:
+        '201':
+          description: Function registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FunctionSummary'
+        '409':
+          description: Function already exists
+  /v1/functions/{name}:
+    get:
+      summary: Get a function
+      operationId: getFunction
+      parameters:
+        - $ref: '#/components/parameters/FunctionName'
+      responses:
+        '200':
+          description: Function details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FunctionSpec'
+        '404':
+          description: Not found
+    delete:
+      summary: Delete a function
+      operationId: deleteFunction
+      parameters:
+        - $ref: '#/components/parameters/FunctionName'
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Not found
+
+  /v1/functions/{name}:invoke:
+    post:
+      summary: Invoke a function synchronously
+      operationId: invokeFunctionSync
+      parameters:
+        - $ref: '#/components/parameters/FunctionName'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/TimeoutMs'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvocationRequest'
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Function result
+          headers:
+            X-Execution-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvocationResponse'
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '408':
+          description: Invocation timeout
+        '429':
+          description: Rate limited
+        '500':
+          description: Invocation failed
+
+  /v1/functions/{name}:enqueue:
+    post:
+      summary: Enqueue a function invocation asynchronously
+      operationId: invokeFunctionAsync
+      parameters:
+        - $ref: '#/components/parameters/FunctionName'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvocationRequest'
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnqueueResponse'
+        '429':
+          description: Rate limited
+        '500':
+          description: Enqueue failed
+
+  /v1/executions/{executionId}:
+    get:
+      summary: Get execution status/result
+      operationId: getExecution
+      parameters:
+        - $ref: '#/components/parameters/ExecutionId'
+      responses:
+        '200':
+          description: Execution status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionStatus'
+        '404':
+          description: Not found
+
+components:
+  parameters:
+    FunctionName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-zA-Z][a-zA-Z0-9._-]{0,62}$'
+      description: Function name
+    ExecutionId:
+      name: executionId
+      in: path
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Client-provided key to deduplicate requests.
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Trace identifier propagated to function pods.
+    TimeoutMs:
+      name: X-Timeout-Ms
+      in: header
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 300000
+      description: Max time in milliseconds for sync invocation.
+
+  schemas:
+    FunctionSummary:
+      type: object
+      required: [name, image, concurrency]
+      properties:
+        name:
+          type: string
+        image:
+          type: string
+        concurrency:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+    FunctionSpec:
+      type: object
+      required: [name, image]
+      properties:
+        name:
+          type: string
+          description: Function name
+        image:
+          type: string
+          description: Container image for the function runtime
+        command:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        resources:
+          $ref: '#/components/schemas/ResourceSpec'
+        timeoutMs:
+          type: integer
+          minimum: 1
+          maximum: 300000
+        concurrency:
+          type: integer
+          minimum: 1
+          description: Max concurrent in-flight invocations for this function
+        maxRetries:
+          type: integer
+          minimum: 0
+          default: 3
+          description: Number of retries for failed invocations (default 3)
+        endpointUrl:
+          type: string
+          description: Optional HTTP endpoint for pool execution mode
+        executionMode:
+          type: string
+          enum: [REMOTE, LOCAL, POOL]
+          description: Execution mode for the function (REMOTE is default)
+        queueSize:
+          type: integer
+          minimum: 1
+          description: Bounded in-memory queue size
+    ResourceSpec:
+      type: object
+      properties:
+        cpu:
+          type: string
+          description: Kubernetes CPU request/limit (e.g., 250m)
+        memory:
+          type: string
+          description: Kubernetes memory request/limit (e.g., 256Mi)
+    InvocationRequest:
+      type: object
+      properties:
+        input:
+          description: JSON input for the function
+          oneOf:
+            - type: object
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
+            - type: 'null'
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    InvocationResponse:
+      type: object
+      required: [executionId, status]
+      properties:
+        executionId:
+          type: string
+        status:
+          type: string
+          enum: [success, error]
+        output:
+          description: JSON output from the function
+          oneOf:
+            - type: object
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
+            - type: 'null'
+        error:
+          $ref: '#/components/schemas/ErrorInfo'
+    EnqueueResponse:
+      type: object
+      required: [executionId, status]
+      properties:
+        executionId:
+          type: string
+        status:
+          type: string
+          enum: [queued]
+    ExecutionStatus:
+      type: object
+      required: [executionId, status]
+      properties:
+        executionId:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, success, error, timeout]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        output:
+          description: JSON output (present on success)
+          oneOf:
+            - type: object
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
+            - type: 'null'
+        error:
+          $ref: '#/components/schemas/ErrorInfo'
+    ErrorInfo:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string

@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: fn-example-
+  namespace: mcfaas
+  labels:
+    app: mcfaas
+    function: example
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: function
+          image: mcfaas/function-runtime:0.1.0
+          env:
+            - name: FUNCTION_NAME
+              value: example
+            - name: EXECUTION_ID
+              value: example-execution
+            - name: CALLBACK_URL
+              value: http://control-plane.mcfaas.svc.cluster.local:8080/v1/internal/executions

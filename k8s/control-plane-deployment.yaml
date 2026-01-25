@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcfaas-control-plane
+  namespace: mcfaas
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcfaas-control-plane
+  template:
+    metadata:
+      labels:
+        app: mcfaas-control-plane
+    spec:
+      serviceAccountName: mcfaas-control-plane
+      containers:
+        - name: control-plane
+          image: mcfaas/control-plane:0.1.0
+          ports:
+            - containerPort: 8080
+            - containerPort: 8081
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081

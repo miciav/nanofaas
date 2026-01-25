@@ -1,0 +1,26 @@
+plugins {
+    id 'org.springframework.boot' version "${springBootVersion}"
+    id 'io.spring.dependency-management' version "${springDependencyManagementVersion}"
+    id 'org.graalvm.buildtools.native' version "${graalvmBuildToolsVersion}"
+}
+
+dependencies {
+    implementation project(':common')
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+bootBuildImage {
+    imageName = project.findProperty('functionRuntimeImage') ?: (System.getenv('FUNCTION_RUNTIME_IMAGE') ?: 'mcfaas/function-runtime:buildpack')
+    builder = 'paketobuildpacks/builder-jammy-tiny'
+    environment = [
+            'BP_JVM_VERSION': '17',
+            'BP_JVM_TYPE': 'JRE',
+            'BPL_JVM_HEAD_ROOM': '0'
+    ]
+}

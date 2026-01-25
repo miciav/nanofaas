@@ -1,0 +1,12 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'mcfaas'
+
+include('common')
+include('control-plane')
+include('function-runtime')
