@@ -60,4 +60,47 @@ class PoolDispatcherTest {
         assertEquals(1, server.getRequestCount());
         server.shutdown();
     }
+
+    @Test
+    void poolDispatchHandlesTextPlain() throws Exception {
+        MockWebServer server = new MockWebServer();
+        server.enqueue(new MockResponse()
+                .setBody("plain-output")
+                .addHeader("Content-Type", "text/plain"));
+        server.start();
+
+        String endpoint = server.url("/invoke").toString();
+
+        FunctionSpec spec = new FunctionSpec(
+                "pool-fn",
+                "image",
+                null,
+                Map.of(),
+                null,
+                1000,
+                1,
+                10,
+                3,
+                endpoint,
+                ExecutionMode.POOL
+        );
+
+        InvocationTask task = new InvocationTask(
+                "exec-pool",
+                "pool-fn",
+                spec,
+                new InvocationRequest("payload", Map.of()),
+                null,
+                null,
+                Instant.now(),
+                1
+        );
+
+        PoolDispatcher dispatcher = new PoolDispatcher(WebClient.builder());
+        InvocationResult result = dispatcher.dispatch(task).get();
+
+        assertTrue(result.success());
+        assertEquals("plain-output", result.output());
+        server.shutdown();
+    }
 }

@@ -18,11 +18,70 @@ if ! multipass list | awk '{print $1}' | grep -q "^${VM_NAME}$"; then
   multipass launch --name "$VM_NAME" --cpus "$CPUS" --memory "$MEMORY" --disk "$DISK"
 fi
 
+INFO_JSON="$(multipass info "$VM_NAME" --format json 2>/dev/null || true)"
+VM_IP=""
+if [[ "${INFO_JSON}" == \{* ]]; then
+  VM_IP="$(INFO_JSON="$INFO_JSON" python3 - <<'PY' || true
+import json, os
+raw = os.environ.get("INFO_JSON", "")
+data = json.loads(raw) if raw else {}
+info = data.get("info", {})
+vm = next(iter(info.values()), {})
+ips = vm.get("ipv4", []) if isinstance(vm, dict) else []
+print(ips[0] if ips else "")
+PY
+  )"
+fi
+
+if [[ -z "${VM_IP}" ]]; then
+  VM_IP="$(multipass info "$VM_NAME" | grep -oE '[0-9]+(\\.[0-9]+){3}' | head -n1)"
+fi
+
+if [[ -z "${VM_IP}" ]]; then
+  echo "Failed to determine VM IP. Check 'multipass info ${VM_NAME}' output." >&2
+  exit 1
+fi
+
 multipass exec "$VM_NAME" -- bash -lc "sudo apt-get update -y"
 
 multipass exec "$VM_NAME" -- bash -lc "if ! command -v docker >/dev/null; then
   sudo apt-get install -y docker.io;
   sudo usermod -aG docker ubuntu;
+fi"
+
+multipass exec "$VM_NAME" -- bash -lc "if ! docker buildx version >/dev/null 2>&1; then
+  sudo apt-get install -y docker-buildx;
+fi"
+
+multipass exec "$VM_NAME" -- bash -lc "if [ ! -d \"\$HOME/.sdkman\" ]; then
+  sudo apt-get install -y curl zip unzip;
+  curl -s \"https://get.sdkman.io\" | bash;
+fi
+source \"\$HOME/.sdkman/bin/sdkman-init.sh\"
+if [ ! -d \"\$HOME/.sdkman/candidates/java/current\" ]; then
+  CANDIDATE=\$(sdk list java | awk '/17\\./ && /tem/ {print \$NF; exit}');
+  if [ -z \"\$CANDIDATE\" ]; then
+    CANDIDATE=\$(sdk list java | awk '/17\\./ {print \$NF; exit}');
+  fi
+  if [ -z \"\$CANDIDATE\" ]; then
+    echo \"No Java 17 candidate found via SDKMAN\" >&2;
+    exit 1;
+  fi
+  sdk install java \"\$CANDIDATE\";
+  sdk default java \"\$CANDIDATE\";
+fi"
+
+multipass exec "$VM_NAME" -- bash -lc "if [ -d \"\$HOME/.sdkman\" ]; then
+  sudo tee /etc/profile.d/sdkman-java.sh >/dev/null <<'EOF'
+export SDKMAN_DIR=\"/home/ubuntu/.sdkman\"
+if [ -s \"\$SDKMAN_DIR/bin/sdkman-init.sh\" ]; then
+  . \"\$SDKMAN_DIR/bin/sdkman-init.sh\"
+fi
+if [ -d \"\$SDKMAN_DIR/candidates/java/current\" ]; then
+  export JAVA_HOME=\"\$SDKMAN_DIR/candidates/java/current\"
+  export PATH=\"\$JAVA_HOME/bin:\$PATH\"
+fi
+EOF
 fi"
 
 multipass exec "$VM_NAME" -- bash -lc "ARCH=\$(uname -m);
@@ -67,32 +126,22 @@ networking:
   apiServerPort: 6443
 nodes:
   - role: control-plane
+kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      certSANs:
+        - \"${VM_IP}\"
+        - \"127.0.0.1\"
+        - \"0.0.0.0\"
 CONF
   kind create cluster --name ${KIND_CLUSTER} --config /tmp/kind-config.yaml;
 fi"
-
-INFO_JSON="$(multipass info "$VM_NAME" --format json 2>/dev/null || true)"
-if [[ "${INFO_JSON}" == \{* ]]; then
-  VM_IP="$(python3 - <<'PY' <<<"$INFO_JSON"
-import json, sys
-info = json.loads(sys.stdin.read())
-vm = next(iter(info.values()))
-print(vm["info"]["ipv4"][0])
-PY
-  )"
-else
-  VM_IP="$(multipass info "$VM_NAME" | grep -oE '[0-9]+(\\.[0-9]+){3}' | head -n1)"
-fi
-
-if [[ -z "${VM_IP}" ]]; then
-  echo "Failed to determine VM IP. Check 'multipass info ${VM_NAME}' output." >&2
-  exit 1
-fi
 
 mkdir -p "$HOME/.kube"
 KCFG="$HOME/.kube/${KIND_CLUSTER}-kind.yaml"
 
 multipass exec "$VM_NAME" -- bash -lc "kubectl config view --raw" | \
-  sed "s#server: https://127.0.0.1:6443#server: https://${VM_IP}:6443#g" > "$KCFG"
+  sed -E "s#server: https://(127\\.0\\.0\\.1|0\\.0\\.0\\.0|localhost):6443#server: https://${VM_IP}:6443#g" > "$KCFG"
 
 echo "KUBECONFIG written to $KCFG"

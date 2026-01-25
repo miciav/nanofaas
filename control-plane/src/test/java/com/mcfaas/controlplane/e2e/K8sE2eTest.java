@@ -5,6 +5,7 @@ import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.NamespaceBuilder;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServiceBuilder;
+import io.fabric8.kubernetes.api.model.Endpoints;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
@@ -67,6 +68,13 @@ class K8sE2eTest {
             org.junit.jupiter.api.Assertions.assertEquals(1, controlReady == null ? 0 : controlReady);
             org.junit.jupiter.api.Assertions.assertEquals(1, runtimeReady == null ? 0 : runtimeReady);
         });
+
+        Awaitility.await().atMost(Duration.ofMinutes(2)).pollInterval(Duration.ofSeconds(2)).untilAsserted(() -> {
+            Endpoints control = client.endpoints().inNamespace(NS).withName("control-plane").get();
+            Endpoints runtime = client.endpoints().inNamespace(NS).withName("function-runtime").get();
+            org.junit.jupiter.api.Assertions.assertTrue(hasReadyEndpoint(control));
+            org.junit.jupiter.api.Assertions.assertTrue(hasReadyEndpoint(runtime));
+        });
     }
 
     @AfterAll
@@ -84,6 +92,10 @@ class K8sE2eTest {
 
             RestAssured.baseURI = "http://localhost";
             RestAssured.port = apiForward.getLocalPort();
+            Awaitility.await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofSeconds(2)).untilAsserted(() ->
+                    RestAssured.get("http://localhost:" + mgmtForward.getLocalPort() + "/actuator/health")
+                            .then()
+                            .statusCode(200));
 
             String endpointUrl = "http://function-runtime." + NS + ".svc.cluster.local:8080/invoke";
             Map<String, Object> spec = Map.of(
@@ -138,6 +150,14 @@ class K8sE2eTest {
                     .asString();
             org.junit.jupiter.api.Assertions.assertTrue(metrics.contains("function_enqueue_total"));
         }
+    }
+
+    private static boolean hasReadyEndpoint(Endpoints endpoints) {
+        if (endpoints == null || endpoints.getSubsets() == null) {
+            return false;
+        }
+        return endpoints.getSubsets().stream().anyMatch(subset ->
+                subset.getAddresses() != null && !subset.getAddresses().isEmpty());
     }
 
     private static Deployment controlPlaneDeployment() {

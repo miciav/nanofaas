@@ -1,6 +1,7 @@
 package com.mcfaas.controlplane.core;
 
 import com.mcfaas.common.model.InvocationResult;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -34,9 +35,19 @@ public class PoolDispatcher implements Dispatcher {
         }
 
         return request.bodyValue(task.request())
-                .retrieve()
-                .bodyToMono(Object.class)
-                .map(InvocationResult::success)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().is2xxSuccessful()) {
+                        MediaType contentType = response.headers().contentType()
+                                .orElse(MediaType.APPLICATION_JSON);
+                        if (MediaType.TEXT_PLAIN.isCompatibleWith(contentType)) {
+                            return response.bodyToMono(String.class).map(InvocationResult::success);
+                        }
+                        return response.bodyToMono(Object.class).map(InvocationResult::success);
+                    }
+                    return response.bodyToMono(String.class)
+                            .defaultIfEmpty(response.statusCode().toString())
+                            .map(msg -> InvocationResult.error("POOL_ERROR", msg));
+                })
                 .onErrorResume(ex -> reactor.core.publisher.Mono.just(
                         InvocationResult.error("POOL_ERROR", ex.getMessage())))
                 .toFuture();
