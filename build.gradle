@@ -20,3 +20,9 @@ subprojects {
         }
     }
 }
+
+tasks.register('k8sE2e') {
+    group = 'verification'
+    description = 'Provision kind in Multipass, load images, and run K8sE2eTest.'
+    dependsOn ':control-plane:k8sE2eTest'
+}

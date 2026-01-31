@@ -1,0 +1,48 @@
+# Combined image: Rust watchdog + Java function runtime
+#
+# Usage:
+#   docker build -f Dockerfile.combined -t mcfaas/function-runtime:watchdog ..
+
+# Stage 1: Build Rust watchdog
+FROM rust:1.83-alpine AS watchdog-builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY watchdog/Cargo.toml watchdog/Cargo.lock* ./
+COPY watchdog/src ./src
+
+RUN cargo build --release
+
+# Stage 2: Build Java function runtime
+FROM eclipse-temurin:17-jdk-alpine AS java-builder
+
+WORKDIR /build
+COPY gradlew settings.gradle build.gradle gradle.properties ./
+COPY gradle ./gradle
+COPY common ./common
+COPY function-runtime ./function-runtime
+
+RUN ./gradlew :function-runtime:bootJar --no-daemon
+
+# Stage 3: Final minimal image
+FROM eclipse-temurin:17-jre-alpine
+
+# Install minimal dependencies
+RUN apk add --no-cache tini
+
+WORKDIR /app
+
+# Copy watchdog binary
+COPY --from=watchdog-builder /build/target/release/mcfaas-watchdog /usr/local/bin/watchdog
+
+# Copy Java runtime
+COPY --from=java-builder /build/function-runtime/build/libs/*.jar /app/app.jar
+
+# Environment defaults
+ENV RUNTIME_URL=http://127.0.0.1:8080/invoke
+ENV WATCHDOG_CMD="java -jar /app/app.jar"
+ENV TIMEOUT_MS=30000
+
+# Use tini as init system, watchdog as main process
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/watchdog"]

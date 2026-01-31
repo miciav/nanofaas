@@ -1,0 +1,46 @@
+# Test image for watchdog integration tests
+#
+# Includes:
+# - Watchdog binary
+# - Python 3 for mock servers
+# - Bash/jq for FILE mode tests
+# - curl for HTTP testing
+
+FROM rust:1.83-alpine AS builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+
+RUN cargo build --release && strip target/release/mcfaas-watchdog
+
+# Test runtime image
+FROM python:3.11-alpine
+
+# Install test dependencies
+RUN apk add --no-cache \
+    bash \
+    jq \
+    curl \
+    bc \
+    netcat-openbsd \
+    procps
+
+# Copy watchdog binary
+COPY --from=builder /build/target/release/mcfaas-watchdog /usr/local/bin/watchdog
+
+# Copy test fixtures
+COPY tests/fixtures /tests/fixtures
+RUN chmod +x /tests/fixtures/*.py /tests/fixtures/*.sh
+
+# Copy integration tests
+COPY tests/integration /tests/integration
+RUN chmod +x /tests/integration/*.sh
+
+# Default working directory
+WORKDIR /tests
+
+# Default command runs all tests
+CMD ["/tests/integration/run_all.sh"]

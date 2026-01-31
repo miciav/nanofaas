@@ -22,13 +22,15 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @Testcontainers
 class E2eFlowTest {
+    // Paths relative to project root (test runs from control-plane/)
+    private static final Path PROJECT_ROOT = Path.of("..").toAbsolutePath().normalize();
     private static final Network network = Network.newNetwork();
 
     private static final GenericContainer<?> functionRuntime = new GenericContainer<>(
             new ImageFromDockerfile()
-                    .withFileFromPath("Dockerfile", Path.of("function-runtime/Dockerfile"))
+                    .withFileFromPath("Dockerfile", PROJECT_ROOT.resolve("function-runtime/Dockerfile"))
                     .withFileFromPath("build/libs/function-runtime-0.1.0.jar",
-                            Path.of("function-runtime/build/libs/function-runtime-0.1.0.jar"))
+                            PROJECT_ROOT.resolve("function-runtime/build/libs/function-runtime-0.1.0.jar"))
     )
             .withExposedPorts(8080)
             .withNetwork(network)
@@ -37,9 +39,9 @@ class E2eFlowTest {
 
     private static final GenericContainer<?> controlPlane = new GenericContainer<>(
             new ImageFromDockerfile()
-                    .withFileFromPath("Dockerfile", Path.of("control-plane/Dockerfile"))
+                    .withFileFromPath("Dockerfile", PROJECT_ROOT.resolve("control-plane/Dockerfile"))
                     .withFileFromPath("build/libs/control-plane-0.1.0.jar",
-                            Path.of("control-plane/build/libs/control-plane-0.1.0.jar"))
+                            PROJECT_ROOT.resolve("control-plane/build/libs/control-plane-0.1.0.jar"))
     )
             .withExposedPorts(8080, 8081)
             .withNetwork(network)

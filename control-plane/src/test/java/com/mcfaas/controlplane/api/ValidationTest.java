@@ -3,8 +3,8 @@ package com.mcfaas.controlplane.api;
 import com.mcfaas.common.model.ExecutionMode;
 import com.mcfaas.common.model.FunctionSpec;
 import com.mcfaas.common.model.InvocationRequest;
-import com.mcfaas.controlplane.core.FunctionService;
-import com.mcfaas.controlplane.core.InvocationService;
+import com.mcfaas.controlplane.registry.FunctionService;
+import com.mcfaas.controlplane.service.InvocationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
@@ -37,7 +37,7 @@ class ValidationTest {
                 "",  // blank name
                 "myimage",
                 null, null, null, null, null, null, null, null,
-                ExecutionMode.REMOTE
+                ExecutionMode.REMOTE, null, null
         );
 
         webClient.post()
@@ -57,7 +57,7 @@ class ValidationTest {
                 "myfunc",
                 null,  // null image
                 null, null, null, null, null, null, null, null,
-                ExecutionMode.REMOTE
+                ExecutionMode.REMOTE, null, null
         );
 
         webClient.post()
@@ -78,7 +78,7 @@ class ValidationTest {
                 null, null, null, null,
                 0,  // zero concurrency
                 null, null, null,
-                ExecutionMode.REMOTE
+                ExecutionMode.REMOTE, null, null
         );
 
         webClient.post()
@@ -98,7 +98,7 @@ class ValidationTest {
                 "myfunc",
                 "myimage",
                 null, null, null, null, null, null, null, null,
-                ExecutionMode.REMOTE
+                ExecutionMode.REMOTE, null, null
         );
 
         when(functionService.register(any())).thenReturn(Optional.of(spec));
@@ -131,7 +131,7 @@ class ValidationTest {
         InvocationRequest request = new InvocationRequest("payload", null);
 
         when(invocationService.invokeSync(any(), any(), any(), any(), any()))
-                .thenThrow(new com.mcfaas.controlplane.core.FunctionNotFoundException("myfunc"));
+                .thenThrow(new com.mcfaas.controlplane.registry.FunctionNotFoundException("myfunc"));
 
         webClient.post()
                 .uri("/v1/functions/myfunc:invoke")
@@ -149,7 +149,7 @@ class ValidationTest {
                 null, null, null, null,
                 -1,   // negative concurrency
                 null, null, null,
-                ExecutionMode.REMOTE
+                ExecutionMode.REMOTE, null, null
         );
 
         webClient.post()

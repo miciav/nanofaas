@@ -1,0 +1,23 @@
+# Simple multi-arch Dockerfile (uses QEMU emulation)
+# Slower but more reliable for cross-platform builds
+FROM rust:1.83-alpine AS builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+
+# Build release binary
+RUN cargo build --release && \
+    strip target/release/mcfaas-watchdog || true
+
+# Runtime stage - scratch image for minimal size (~2MB)
+FROM scratch
+
+LABEL org.opencontainers.image.title="mcFaas Watchdog"
+LABEL org.opencontainers.image.description="Lightweight Rust process supervisor for function containers"
+
+COPY --from=builder /build/target/release/mcfaas-watchdog /watchdog
+
+ENTRYPOINT ["/watchdog"]

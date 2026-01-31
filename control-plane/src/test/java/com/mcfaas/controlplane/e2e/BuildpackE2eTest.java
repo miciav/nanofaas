@@ -19,6 +19,7 @@ import java.util.Map;
 
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @Testcontainers
 class BuildpackE2eTest {
@@ -31,9 +32,13 @@ class BuildpackE2eTest {
 
     @BeforeAll
     static void buildImagesAndStart() throws Exception {
-        if (!DockerClientFactory.instance().isDockerAvailable()) {
-            throw new IllegalStateException("Docker is required for buildpack E2E test");
-        }
+        assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker is required for buildpack E2E test");
+
+        // Skip on ARM64 - Paketo buildpacks don't have native ARM64 support,
+        // emulated amd64 images are unstable. Use E2eFlowTest instead.
+        String arch = System.getProperty("os.arch");
+        assumeTrue(!"aarch64".equals(arch) && !"arm64".equals(arch),
+            "BuildpackE2eTest skipped on ARM64: Paketo lacks native ARM64 support");
 
         runGradleBuild();
 
@@ -112,8 +117,10 @@ class BuildpackE2eTest {
     }
 
     private static void runGradleBuild() throws Exception {
+        // Test runs from control-plane/ directory, so project root is ..
+        File projectRoot = new File("..").getAbsoluteFile().getCanonicalFile();
         ProcessBuilder builder = new ProcessBuilder()
-                .directory(new File("."))
+                .directory(projectRoot)
                 .command("./gradlew", ":control-plane:bootBuildImage", ":function-runtime:bootBuildImage",
                         "-PcontrolPlaneImage=" + CONTROL_IMAGE, "-PfunctionRuntimeImage=" + RUNTIME_IMAGE, "--no-daemon");
         builder.environment().putIfAbsent("JAVA_HOME", System.getProperty("java.home"));

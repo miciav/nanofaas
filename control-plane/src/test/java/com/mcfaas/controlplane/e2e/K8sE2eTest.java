@@ -23,6 +23,7 @@ import java.util.Map;
 
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -35,17 +36,14 @@ class K8sE2eTest {
     @BeforeAll
     static void setupCluster() {
         String kubeconfig = System.getenv("KUBECONFIG");
-        if (kubeconfig == null || kubeconfig.isBlank()) {
-            throw new IllegalStateException("KUBECONFIG not set. Run scripts/setup-multipass-kind.sh and export KUBECONFIG.");
-        }
-        if (!Files.exists(Path.of(kubeconfig))) {
-            throw new IllegalStateException("KUBECONFIG file not found at: " + kubeconfig);
-        }
+        assumeTrue(kubeconfig != null && !kubeconfig.isBlank(),
+            "KUBECONFIG not set. Run scripts/setup-multipass-kind.sh and export KUBECONFIG.");
+        assumeTrue(Files.exists(Path.of(kubeconfig)),
+            "KUBECONFIG file not found at: " + kubeconfig);
 
         client = new KubernetesClientBuilder().build();
-        if (client.getConfiguration() == null || client.getConfiguration().getMasterUrl() == null) {
-            throw new IllegalStateException("Kubernetes client not configured. Check KUBECONFIG.");
-        }
+        assumeTrue(client.getConfiguration() != null && client.getConfiguration().getMasterUrl() != null,
+            "Kubernetes client not configured. Check KUBECONFIG.");
 
         Namespace namespace = new NamespaceBuilder()
                 .withNewMetadata()

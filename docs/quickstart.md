@@ -22,8 +22,11 @@
     - `./scripts/kind-build-load.sh`
   - Export kubeconfig and run:
     - `export KUBECONFIG=$HOME/.kube/mcfaas-kind.yaml`
-    - `./scripts/e2e.sh`
+    - `./gradlew :control-plane:test --tests com.mcfaas.controlplane.e2e.K8sE2eTest`
   - The k8s E2E test will fail if `KUBECONFIG` is missing or invalid.
+  - Automated (provisions kind in Multipass, loads images, runs K8sE2eTest):
+    - `./gradlew k8sE2e`
+    - VM and kubeconfig are deleted after the test by default (set `-Pk8sDeleteVm=false` or `-Pk8sDeleteKubeconfig=false` to keep them).
 
 ## Run control plane locally
 

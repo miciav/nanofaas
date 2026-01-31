@@ -3,6 +3,7 @@ package com.mcfaas.runtime.core;
 import com.mcfaas.common.model.InvocationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -17,6 +18,7 @@ public class CallbackClient {
     private final RestClient restClient;
     private final String baseUrl;
 
+    @Autowired
     public CallbackClient(RestClient restClient) {
         this.restClient = restClient;
         this.baseUrl = System.getenv("CALLBACK_URL");

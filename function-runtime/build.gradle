@@ -15,12 +15,25 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
+// Disable all AOT processing - not needed for regular test runs, only for native builds
+tasks.named('processAot') { enabled = false }
+tasks.named('compileAotJava') { enabled = false }
+tasks.named('processAotResources') { enabled = false }
+tasks.named('aotClasses') { enabled = false }
+tasks.named('processTestAot') { enabled = false }
+tasks.named('compileAotTestJava') { enabled = false }
+tasks.named('processAotTestResources') { enabled = false }
+tasks.named('aotTestClasses') { enabled = false }
+
 bootBuildImage {
     imageName = project.findProperty('functionRuntimeImage') ?: (System.getenv('FUNCTION_RUNTIME_IMAGE') ?: 'mcfaas/function-runtime:buildpack')
-    builder = 'paketobuildpacks/builder-jammy-tiny'
+    // Pin to versions that work on ARM64, force JVM mode (not native)
+    builder = 'paketobuildpacks/builder-jammy-base:0.4.375'
+    runImage = 'paketobuildpacks/run-jammy-base:0.1.138'
     environment = [
-            'BP_JVM_VERSION': '17',
+            'BP_JVM_VERSION': '21',
             'BP_JVM_TYPE': 'JRE',
-            'BPL_JVM_HEAD_ROOM': '0'
+            'BPL_JVM_HEAD_ROOM': '0',
+            'BP_NATIVE_IMAGE': 'false'
     ]
 }

@@ -7,6 +7,7 @@ import com.mcfaas.runtime.core.CallbackClient;
 import com.mcfaas.runtime.core.HandlerRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,15 +19,17 @@ public class InvokeController {
 
     private final CallbackClient callbackClient;
     private final HandlerRegistry handlerRegistry;
+    private final String executionId;
 
-    public InvokeController(CallbackClient callbackClient, HandlerRegistry handlerRegistry) {
+    public InvokeController(CallbackClient callbackClient, HandlerRegistry handlerRegistry,
+                           @Value("${EXECUTION_ID:#{systemEnvironment['EXECUTION_ID'] ?: 'test-execution'}}") String executionId) {
         this.callbackClient = callbackClient;
         this.handlerRegistry = handlerRegistry;
+        this.executionId = executionId;
     }
 
     @PostMapping("/invoke")
     public ResponseEntity<Object> invoke(@RequestBody InvocationRequest request) {
-        String executionId = System.getenv("EXECUTION_ID");
         if (executionId == null || executionId.isBlank()) {
             log.error("EXECUTION_ID environment variable not set");
             return ResponseEntity.badRequest()

@@ -3,9 +3,9 @@ package com.mcfaas.controlplane;
 import com.mcfaas.common.model.ExecutionMode;
 import com.mcfaas.common.model.FunctionSpec;
 import com.mcfaas.common.model.InvocationRequest;
-import com.mcfaas.controlplane.core.FunctionService;
-import com.mcfaas.controlplane.core.RateLimiter;
-import com.mcfaas.controlplane.core.Scheduler;
+import com.mcfaas.controlplane.registry.FunctionService;
+import com.mcfaas.controlplane.service.RateLimiter;
+import com.mcfaas.controlplane.scheduler.Scheduler;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,7 +62,9 @@ class ControlPlaneApiTest {
                 10,
                 3,
                 null,
-                ExecutionMode.LOCAL
+                ExecutionMode.LOCAL,
+                null,
+                null
         ));
     }
 

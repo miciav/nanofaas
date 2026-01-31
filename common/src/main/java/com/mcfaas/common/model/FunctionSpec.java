@@ -16,6 +16,8 @@ public record FunctionSpec(
         @Min(1) Integer queueSize,
         @Min(0) Integer maxRetries,
         String endpointUrl,
-        ExecutionMode executionMode
+        ExecutionMode executionMode,
+        RuntimeMode runtimeMode,
+        String runtimeCommand
 ) {
 }

@@ -1,7 +1,7 @@
 package com.mcfaas.controlplane.api;
 
 import com.mcfaas.common.model.FunctionSpec;
-import com.mcfaas.controlplane.core.FunctionService;
+import com.mcfaas.controlplane.registry.FunctionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;

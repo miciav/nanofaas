@@ -247,6 +247,20 @@ components:
           type: string
           enum: [REMOTE, LOCAL, POOL]
           description: Execution mode for the function (REMOTE is default)
+        runtimeMode:
+          type: string
+          enum: [HTTP, STDIO, FILE]
+          default: HTTP
+          description: |
+            How the watchdog interacts with the function process:
+            - HTTP: Function exposes HTTP server (Java Spring, Python FastAPI)
+            - STDIO: Function reads stdin JSON, writes stdout JSON (scripts)
+            - FILE: Function reads input file, writes output file (Bash, binaries)
+        runtimeCommand:
+          type: string
+          description: |
+            Custom command to run the function process.
+            Default depends on runtime (e.g., "java -jar /app/app.jar" for Java).
         queueSize:
           type: integer
           minimum: 1
