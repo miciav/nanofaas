@@ -1,10 +1,11 @@
 # nanofaas
 
-Minimal, high-performance FaaS control plane and Java function runtime designed for Kubernetes, with a focus on low latency and fast startup (GraalVM-ready).
+Minimal, high-performance FaaS control plane and Java function runtime with pluggable managed-deployment backends, optimized for low latency and fast startup (GraalVM-ready).
 
 ## Modules
 
-- `control-plane/` API gateway, in-memory queueing, scheduler thread, and Kubernetes dispatch
+- `control-plane/` API gateway, in-memory queueing, scheduler thread, and backend-neutral dispatch core
+- `control-plane-modules/` optional modules, including managed deployment providers such as `k8s-deployment-provider` and `container-deployment-provider`
 - `function-sdk-go/` Go SDK for authoring NanoFaaS functions with an embedded HTTP runtime
 - `function-runtime/` HTTP runtime for Java function handlers
 - `python-runtime/` HTTP runtime for Python function handlers
@@ -17,7 +18,7 @@ Minimal, high-performance FaaS control plane and Java function runtime designed 
 
 - Java 21 (SDKMAN recommended)
 - Docker-compatible container runtime (Docker Desktop or equivalent)
-- For Kubernetes E2E: OpenSSH client and internet access to install k3s in-VM
+- For Kubernetes E2E: `python3`, OpenSSH client, internet access, and a Debian/Ubuntu-style target VM
 - [Multipass](https://multipass.run) only if you want the scripts to create/manage the VM (`E2E_VM_LIFECYCLE=multipass`)
 
 ## Quickstart (local)
@@ -33,10 +34,23 @@ SERVER_PORT=8082 ./gradlew :function-runtime:bootRun
 
 `bootRun` includes all optional control-plane modules by default.
 Use `-PcontrolPlaneModules=none` to run a core-only control plane.
+Use `-PcontrolPlaneModules=container-deployment-provider` plus `--args='--nanofaas.deployment.default-backend=container-local'`
+for a no-Kubernetes managed-deployment profile.
 
-## Control-plane local tooling (TUI)
+## Control-plane tooling
 
-Interactive local orchestrator for profile-based control-plane builds, optional test phases, and HTML report generation.
+Canonical tool root: `tools/controlplane/`.
+
+Use the wrapper below for the unified control-plane build/run/image/test/inspect UX:
+
+```bash
+scripts/control-plane-build.sh build --profile core --dry-run
+scripts/control-plane-build.sh image --profile all --dry-run
+scripts/control-plane-build.sh test --profile k8s -- --tests '*CoreDefaultsTest'
+scripts/control-plane-build.sh inspect --profile container-local --dry-run
+```
+
+Use the compatibility wrapper below for the interactive/profile-driven pipeline runner and HTML report generation:
 
 ```bash
 scripts/controlplane-tool.sh --help
@@ -46,9 +60,9 @@ scripts/controlplane-tool.sh --profile-name dev --use-saved-profile
 
 Artifacts are written under:
 
-- `tooling/profiles/<profile>.toml`
-- `tooling/runs/<timestamp>-<profile>/summary.json`
-- `tooling/runs/<timestamp>-<profile>/report.html`
+- `tools/controlplane/profiles/<profile>.toml`
+- `tools/controlplane/runs/<timestamp>-<profile>/summary.json`
+- `tools/controlplane/runs/<timestamp>-<profile>/report.html`
 
 ## Build images (buildpacks)
 
@@ -58,11 +72,25 @@ Artifacts are written under:
 
 ## Custom control-plane builds
 
-You can build a custom control plane by selecting optional modules at compile time.
+Use the wrapper for the common profiles:
+
+```bash
+scripts/control-plane-build.sh build --profile core
+scripts/control-plane-build.sh run --profile container-local -- --args=--nanofaas.deployment.default-backend=container-local
+scripts/control-plane-build.sh image --profile k8s --extra-gradle-arg -PcontrolPlaneImage=nanofaas/control-plane:test
+scripts/control-plane-build.sh inspect --profile all
+```
+
+Raw Gradle remains available for low-level/advanced workflows.
 
 ```bash
 # include one module
 ./gradlew :control-plane:bootJar -PcontrolPlaneModules=build-metadata
+
+# run with the local managed-deployment provider only
+./gradlew :control-plane:bootRun \
+  -PcontrolPlaneModules=container-deployment-provider \
+  --args='--nanofaas.deployment.default-backend=container-local'
 
 # include all modules found under control-plane-modules/
 ./gradlew :control-plane:bootJar -PcontrolPlaneModules=all
@@ -116,7 +144,7 @@ E2E_VM_LIFECYCLE=external E2E_VM_HOST=ci-k3s.example.com E2E_VM_USER=dev E2E_VM_
 
 Supported external-VM variables:
 `E2E_VM_LIFECYCLE=external`, `E2E_VM_HOST`, `E2E_VM_USER`, `E2E_VM_HOME`, `E2E_KUBECONFIG_PATH`, `E2E_REMOTE_PROJECT_DIR`, `E2E_PUBLIC_HOST`, `E2E_KUBECONFIG_SERVER`.
-SSH/SCP are always used for remote command execution and file transfer. Multipass is used only for VM lifecycle when `E2E_VM_LIFECYCLE=multipass`.
+SSH/SCP are always used for remote command execution and file transfer. VM provisioning is driven by Ansible over SSH for both `multipass` and `external` lifecycle modes. If `ansible-playbook` is not already installed on the host, the scripts bootstrap it idempotently in a local virtualenv and fall back to a user-site `pip` install when `python3 -m venv` is unavailable. k3s defaults to the latest official release at run time; set `K3S_VERSION` only when you need to pin a specific version. Multipass is used only for VM lifecycle when `E2E_VM_LIFECYCLE=multipass`.
 
 E2E/module matrix (control-plane optional modules compile):
 ```bash
@@ -135,6 +163,7 @@ E2E/module matrix (control-plane optional modules compile):
 
 - `docs/tutorial-java-function.md` — step-by-step guide to writing, building, and invoking a Java function.
 - `docs/architecture.md` and `docs/quickstart.md` provide a full overview and operational notes.
+- `docs/no-k8s-profile.md` documents the `container-local` managed-deployment profile.
 - `docs/loadtest-payload-profile.md` documents payload variability modes, metrics, and validation commands for k6 load tests.
 - `function-sdk-go/README.md` documents the planned Go function authoring/runtime SDK.
 
