@@ -4,7 +4,7 @@ Minimal, high-performance FaaS control plane and Java function runtime designed 
 
 ## Modules
 
-- `control-plane/` API gateway, in-memory queueing, scheduler thread, and Kubernetes dispatch
+- `control-plane-modules/storage-deduplicator/` In-process file deduplication for memory optimization via page cache sharing
 - `function-sdk-go/` Go SDK for authoring NanoFaaS functions with an embedded HTTP runtime
 - `function-runtime/` HTTP runtime for Java function handlers
 - `python-runtime/` HTTP runtime for Python function handlers
@@ -134,25 +134,26 @@ E2E/module matrix (control-plane optional modules compile):
 ## Docs
 
 - `docs/tutorial-java-function.md` — step-by-step guide to writing, building, and invoking a Java function.
+- `docs/storage-deduplication.md` — memory optimization strategy via storage-level deduplication.
 - `docs/architecture.md` and `docs/quickstart.md` provide a full overview and operational notes.
 - `docs/loadtest-payload-profile.md` documents payload variability modes, metrics, and validation commands for k6 load tests.
 - `function-sdk-go/README.md` documents the planned Go function authoring/runtime SDK.
 
 ## nanofaas-cli (CLI)
 
-Standalone CLI (GraalVM native) under the `nanofaas-cli/` subproject.
+Standalone CLI under the `nanofaas-cli/` subproject.
 
-Build a native executable (requires GraalVM):
+**Quick Install (JVM):**
+```bash
+./gradlew :nanofaas-cli:installDist
+export PATH="$PATH:$(pwd)/nanofaas-cli/build/install/nanofaas-cli/bin"
+nanofaas --help
+```
 
+**Build Native (GraalVM):**
 ```bash
 ./gradlew :nanofaas-cli:nativeCompile
 ./nanofaas-cli/build/native/nativeCompile/nanofaas-cli --help
 ```
 
-Run on the JVM:
-
-```bash
-./gradlew :nanofaas-cli:run --args="--help"
-```
-
-Command reference: `docs/nanofaas-cli.md`.
+For full installation details and command reference, see [docs/nanofaas-cli.md](docs/nanofaas-cli.md).
