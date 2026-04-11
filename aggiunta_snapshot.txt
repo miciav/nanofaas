@@ -1,0 +1,29 @@
+# Ottimizzazione della Memoria tramite Deduplicazione dello Storage
+
+In NanoFaaS, l'avvio di un nuovo Pod per ogni funzione introduce un overhead non solo di tempo (cold start), ma anche di risorse. Quando la piattaforma scala orizzontalmente, molteplici istanze della stessa funzione (o di funzioni diverse che condividono lo stesso runtime) occupano memoria fisica duplicata per caricare i medesimi file binari e librerie.
+
+L'obiettivo di questa strategia è massimizzare l'efficienza della memoria sfruttando le caratteristiche del kernel Linux per condividere i dati tra processi indipendenti.
+
+## Strategia: Deduplicazione e Page Cache Sharing
+
+Il kernel Linux ottimizza l'accesso ai file attraverso la **Page Cache**. Se più processi aprono lo stesso file (identificato dallo stesso `inode` sul filesystem), il kernel carica le pagine di memoria una sola volta e le condivide tra tutti i processi. In un ambiente containerizzato standard, questo non avviene efficientemente perché ogni container ha il proprio filesystem isolato (layer), portando alla duplicazione degli inode anche per file identici.
+
+### Piano d'Azione
+Per superare questo ostacolo, NanoFaaS può implementare una routine di deduplicazione a livello di host:
+
+1.  **Analisi dei File:** Durante la fase di registrazione o build della funzione, il Control Plane analizza i file nel root filesystem del container.
+2.  **Hashing SHA-1:** Per ogni file viene calcolato un hash SHA-1. I file con lo stesso hash vengono identificati come duplicati.
+3.  **Consolidamento tramite Hard Link:** La piattaforma mantiene una singola copia fisica di ogni file univoco in un archivio protetto da scrittura. Tutti i file duplicati nei vari layer dei container vengono sostituiti da **hard link** che puntano a questa copia univoca.
+4.  **Attivazione Page Cache:** Poiché i container accedono ora al medesimo `inode`, il kernel Linux attiva automaticamente lo sharing della memoria. I "major page fault" (lettura da disco) vengono trasformati in rapidi "minor page fault" (accesso alla pagina già in RAM).
+
+### Risultati Attesi
+*   **Aumento della densità:** Incremento della condivisione della memoria fisica tra le istanze fino al 28%.
+*   **Riduzione dell'overhead:** Dimezzamento del consumo di memoria complessivo durante lo scaling orizzontale.
+*   **Velocità di caricamento:** Caricamento delle librerie quasi istantaneo se un'altra funzione simile è già attiva sul nodo.
+
+---
+
+## Considerazioni
+
+1.  **Sinergia con GraalVM:** Le immagini native generate da GraalVM tendono a essere grandi binari statici. Se più funzioni usano la stessa versione del runtime o librerie base comuni, la deduplicazione degli inode permette di condividere gran parte dell'eseguibile in memoria senza alcuna modifica al codice utente. Questo è perfetto per l'attuale stack tecnologico di nanofaas.
+2.  **Manutenibilità:** Il costo di implementazione è relativamente basso. Il lavoro si concentra sulla pipeline di archiviazione dei file nel Function Registry, senza dover gestire la complessità dello stato della memoria viva (stack, heap, file descriptor aperti) che renderebbe il debug e il ripristino estremamente fragili in ambienti distribuiti.

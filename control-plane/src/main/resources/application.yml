@@ -44,6 +44,11 @@ nanofaas:
     poll-interval-ms: 5000
     default-min-replicas: 1
     default-max-replicas: 10
+  storage:
+    deduplication:
+      enabled: true
+      base-path: /var/lib/nanofaas/storage
+      auto-deduplicate-on-registration: true
 
 sync-queue:
   enabled: true
